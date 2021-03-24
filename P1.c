@@ -12,13 +12,14 @@
 
 #define MAXLEN 1024
 #define MAXARGLEN 100
-enum MODE{PIPE, REDIRECT_OUT, REDIRECT_IN, REDIRECT_APPEND, NONE}
+enum MODE{NONE, PIPE, REDIRECT_OUT, REDIRECT_IN, REDIRECT_APPEND, PIPE_DOUBLE,PIPE_TRIPLE};
 
 char read_buf[MAXLEN];
 char *arg_list[MAXARGLEN];
 
 int execute(char*input);
 char*get_input();
+int isDelim(char c);
 
 int main()
 {
@@ -32,22 +33,39 @@ int main()
     }
 }
 
+
 int execute(char*input){
     int Status;
     pid_t p;
-
+    int mode=NONE;
     int arg_ptr=0;
     char *nex_tok=input;
     //fix parsing
-    while(nex_tok){
-
+    while(*nex_tok){
         arg_list[arg_ptr++]=nex_tok;
-        nex_tok=strtok(NULL," ");
-
+        while(*nex_tok && !isDelim(*nex_tok)){
+            nex_tok++;
+        }
+        while(isspace(*nex_tok)){
+            *nex_tok = '\0';
+            nex_tok++;
+        }
+        if(*nex_tok=='|'){
+            mode = PIPE;
+            nex_tok++;
+            if(*nex_tok=='|'){
+                mode = PIPE_DOUBLE;
+                nex_tok++;
+                if(*nex_tok=='|'){
+                    mode = PIPE_TRIPLE;
+                    nex_tok++;
+                }
+            }
+            break;
+        }
     }
     arg_list[arg_ptr]=NULL;
-
-    int mode
+    
     switch(mode){
         case NONE:    
             p=fork();
@@ -57,7 +75,7 @@ int execute(char*input){
             }
             break;
         
-        default: printf("THIS REDIRECTION IS NOT SUPPORTED YET");
+        default: printf("ERROR. THIS REDIRECTION IS NOT SUPPORTED YET\n");
     }
     
     waitpid(p,&Status,0);
@@ -74,4 +92,9 @@ char*get_input(){
     while(isspace(read_buf[ptr_end])) read_buf[ptr_end--]='\0';
     while(isspace(read_buf[ptr_strt])) ptr_strt++;
     return read_buf+ptr_strt;
+}
+
+int isDelim(char c){
+    if(isspace(c)||c=='|'||c=='<'||c=='>') return 1;
+    return 0;
 }
