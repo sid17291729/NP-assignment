@@ -26,21 +26,29 @@ int main()
 {
     fprintf(stdout,"Shell Running\n");
     char*input;
+    int Status;
     while(1)
     {
         input = get_input();
-        execute(input);
+        int p=fork();
+        if(p==0)
+        break;
+        else
+        {waitpid(p,&Status,0);
+        printf("process pid=%d, return status=%d\n",p,Status);}   
         printf("\n");
     }
+    execute(input);
 }
 
 
 int execute(char*input){
     int Status;
-    pid_t p;
+    pid_t pd;
     int mode=NONE;
     int arg_ptr=0;
     char *nex_tok=input;
+    
     //fix parsing
     while(*nex_tok){
         arg_list[arg_ptr++]=nex_tok;
@@ -57,18 +65,50 @@ int execute(char*input){
         }
     }
     arg_list[arg_ptr]=NULL;
-    
+    //printf("pid=%d ,mode=%d\n",getpid(),mode);
     switch(mode){
-        case NONE:    
-            p=fork();
-            if(p==0){
+        case NONE:   
+            
+            pd=fork();
+            if(pd==0){
                 execvp(arg_list[0],arg_list);
-                printf("ERROR\n");
+                
+                exit(0);
             }
+            int st;
+            waitpid(pd,&st,0);
             break;
         
         case PIPE:
-            printf("PIPE execute\n");
+            printf("");
+            int pw[2];
+            pipe(pw);
+            
+            pd=fork();
+            if(pd==0)
+            {    
+                
+                close(1);
+                dup(pw[1]);
+                close(pw[0]);
+                execvp(arg_list[0],arg_list);
+                printf("error in executing %s\n",arg_list[0]);
+                exit(0);
+                    
+               
+                
+            }
+             else
+            {   int st;
+                waitpid(pd,&st,0);
+                close(0);
+                dup(pw[0]);
+                close(pw[1]);
+                execute(nex_tok);
+                
+
+
+            }
             break;
         
         case REDIRECT_OUT:
@@ -93,11 +133,15 @@ int execute(char*input){
 
         default: printf("ERROR. THIS REDIRECTION IS NOT SUPPORTED YET\n");
     }
-    if(p){    
-        waitpid(p,&Status,0);
-        printf("process pid=%d, return status=%d\n",p,Status);
-    }
-    return p;
+    
+    // if(pd){ 
+    //     printf("pid=%d waiting for pd=%d\n",getpid(),pd);  
+    //     waitpid(pd,&Status,0);
+    //     printf("process pid=%d, return status=%d\n",pd,Status);
+    // }
+    // else
+    // printf("not waiting pid=%d,pd=%d\n",getpid(),pd);
+    return pd;
 }
 
 
