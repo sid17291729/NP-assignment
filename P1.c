@@ -70,13 +70,13 @@ int execute(char*input){
     //printf("pid=%d ,mode=%d\n",getpid(),mode);
     int pw[2];
     int st;
+    int filename_fd;
     switch(mode){
         case NONE:   
             
             pd=fork();
             if(pd==0){
                 execvp(arg_list[0],arg_list);
-                
                 exit(0);
             }
             waitpid(pd,&st,0);
@@ -111,16 +111,12 @@ int execute(char*input){
             break;
         
         case REDIRECT_OUT:
-            // performs operation on command type: C1>filename
-            // int pipe_redirect[2];
-            // pipe(pipe_redirect);
-
             //open fd for filename
             while(isspace(*nex_tok)){
                 *nex_tok = '\0';
                 nex_tok++;
             }
-            int filename_fd = open(nex_tok, O_CREAT|O_TRUNC|O_WRONLY);
+            filename_fd = open(nex_tok, O_CREAT|O_TRUNC|O_WRONLY);
             pd = fork();
             if(pd==0){
                 close(1);
@@ -136,11 +132,44 @@ int execute(char*input){
             break;
 
         case REDIRECT_APPEND:
-            printf("APPEND\n");
+            while(isspace(*nex_tok)){
+                *nex_tok = '\0';
+                nex_tok++;
+            }
+            filename_fd = open(nex_tok, O_CREAT|O_APPEND|O_WRONLY);
+            pd = fork();
+            if(pd==0){
+                close(1);
+                dup(filename_fd);
+                execvp(arg_list[0], arg_list);
+                printf("error in executing %s\n",arg_list[0]);
+                exit(0);
+            }
+            else{
+                waitpid(pd,&st,0);
+                close(filename_fd);
+            }
             break;
 
         case REDIRECT_IN:
-            printf("REDIRECT IN\n");
+            // need to handle file not exists error properly
+            while(isspace(*nex_tok)){
+                *nex_tok = '\0';
+                nex_tok++;
+            }
+            filename_fd = open(nex_tok, O_RDONLY);
+            pd = fork();
+            if(pd==0){
+                close(0);
+                dup(filename_fd);
+                execvp(arg_list[0], arg_list);
+                printf("error in executing %s\n",arg_list[0]);
+                exit(0);
+            }
+            else{
+                waitpid(pd,&st,0);
+                close(filename_fd);
+            }
             break;
 
         case PIPE_DOUBLE:
