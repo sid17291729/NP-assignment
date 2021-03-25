@@ -6,6 +6,8 @@
 #include<string.h>
 #include<sys/wait.h>
 #include<ctype.h>
+#include<sys/stat.h>
+#include<fcntl.h>
 
 #define ANSI_COLOR_GREEN "\x1b[32m"
 #define ANSI_COLOR_RESET   "\x1b[0m"
@@ -66,6 +68,8 @@ int execute(char*input){
     }
     arg_list[arg_ptr]=NULL;
     //printf("pid=%d ,mode=%d\n",getpid(),mode);
+    int pw[2];
+    int st;
     switch(mode){
         case NONE:   
             
@@ -75,13 +79,11 @@ int execute(char*input){
                 
                 exit(0);
             }
-            int st;
             waitpid(pd,&st,0);
             break;
         
         case PIPE:
-            printf("");
-            int pw[2];
+            
             pipe(pw);
             
             pd=fork();
@@ -98,21 +100,39 @@ int execute(char*input){
                
                 
             }
-             else
-            {   int st;
+            else
+            {
                 waitpid(pd,&st,0);
                 close(0);
                 dup(pw[0]);
                 close(pw[1]);
                 execute(nex_tok);
-                
-
-
             }
             break;
         
         case REDIRECT_OUT:
-            printf("redirect OUT\n");
+            // performs operation on command type: C1>filename
+            // int pipe_redirect[2];
+            // pipe(pipe_redirect);
+
+            //open fd for filename
+            while(isspace(*nex_tok)){
+                *nex_tok = '\0';
+                nex_tok++;
+            }
+            int filename_fd = open(nex_tok, O_CREAT|O_TRUNC|O_WRONLY);
+            pd = fork();
+            if(pd==0){
+                close(1);
+                dup(filename_fd);
+                execvp(arg_list[0], arg_list);
+                printf("error in executing %s\n",arg_list[0]);
+                exit(0);
+            }
+            else{
+                waitpid(pd,&st,0);
+                close(filename_fd);
+            }
             break;
 
         case REDIRECT_APPEND:
