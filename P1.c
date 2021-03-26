@@ -23,7 +23,7 @@ int execute(char*input);
 char*get_input();
 int isDelim(char c);
 char*set_mode(char*,int*);
-
+int has_pipe(char *nex_tok);
 int main()
 {
     fprintf(stdout,"Shell Running\n");
@@ -68,6 +68,7 @@ int execute(char*input){
     }
     arg_list[arg_ptr]=NULL;
     //printf("pid=%d ,mode=%d\n",getpid(),mode);
+    //printf("nex_tok=%c\n",*nex_tok);
     int pw[2];
     int st;
     int filename_fd;
@@ -76,6 +77,7 @@ int execute(char*input){
             
             pd=fork();
             if(pd==0){
+                //printf("executing %s\n",arg_list[0]);
                 execvp(arg_list[0],arg_list);
                 exit(0);
             }
@@ -153,27 +155,121 @@ int execute(char*input){
 
         case REDIRECT_IN:
             // need to handle file not exists error properly
+            
             while(isspace(*nex_tok)){
                 *nex_tok = '\0';
                 nex_tok++;
             }
+            int pp=has_pipe(nex_tok);
+            if(pp)
+            pipe(pw);
+            
+
+            char *temp_nex_tok=nex_tok;
+            while(*temp_nex_tok&&!isspace(*temp_nex_tok))
+            ++temp_nex_tok;
+            *temp_nex_tok='\0';
+           
             filename_fd = open(nex_tok, O_RDONLY);
+            ++temp_nex_tok;
+            //nex_tok=temp_nex_tok;
+            
             pd = fork();
             if(pd==0){
                 close(0);
                 dup(filename_fd);
+                if(pp)
+                {
+                    close(1);
+                    dup(pw[1]);
+                    close(pw[0]);
+                    //printf("pid=%d pipe used\n",getpid());
+                }
                 execvp(arg_list[0], arg_list);
                 printf("error in executing %s\n",arg_list[0]);
                 exit(0);
             }
             else{
+                if(pp)
+                {
+                    close(0);
+                    dup(pw[0]);
+                    close(pw[1]);
+                }
                 waitpid(pd,&st,0);
                 close(filename_fd);
+                if(pp)
+               { while(*nex_tok!='|')
+                    nex_tok++;
+                    ++nex_tok;
+                     
+                    execute(nex_tok);
+                }
+
             }
             break;
 
         case PIPE_DOUBLE:
             printf("DOUBLE\n");
+            pipe(pw);
+            int p1[2];
+            int p2[2];
+            pd=fork();
+            if(pd==0)
+            {
+              close(1);
+              dup(pw[1]);
+              close(pw[0]);
+              execvp(arg_list[0], arg_list);
+                printf("error in executing %s\n",arg_list[0]);
+                exit(0);
+            }
+            else
+            {
+                waitpid(pd,&Status,0);
+                pipe(p1);
+                pipe(p2);
+                close(pw[1]);
+                char c;
+                while(read(pw[0],&c,1)>0)
+                {    //printf("%c",c);
+                    write(p1[1],&c,1);
+                    write(p2[1],&c,1);
+                }
+                //printf("\n");
+                close(pw[0]);
+                close(p1[1]);
+                close(p2[1]);
+                char *temp_nex_tok=nex_tok;
+                while(*temp_nex_tok!=',')
+                ++temp_nex_tok;
+
+                *temp_nex_tok='\0';
+                ++temp_nex_tok;
+                while(isspace(*temp_nex_tok))
+                ++temp_nex_tok;
+                pd=fork();
+                if(pd==0)
+                {
+                    close(0);
+                    dup(p1[0]);
+                    execute(nex_tok);
+                }
+                else
+                {   waitpid(pd,&Status,0);
+                    pd=fork();
+                    if(pd==0)
+                    {nex_tok=temp_nex_tok;
+                    close(0);
+                    dup(p2[0]);
+                    execute(nex_tok);}
+                    else
+                    waitpid(pd,&Status,0);
+                }
+                
+            }
+            
+            
             break;
 
         case PIPE_TRIPLE:
@@ -193,7 +289,17 @@ int execute(char*input){
     return pd;
 }
 
-
+int has_pipe(char *nex_tok)
+{    char *temp=nex_tok;
+    while(*temp!='\0')
+    {
+        if(*temp=='|')
+        return 1;
+        //printf("temp=%c\n",*temp);
+        temp++;
+    }
+    return 0;
+}
 char* set_mode(char*nex_tok, int*mode){
     if(*nex_tok=='|'){
         *mode = PIPE;
