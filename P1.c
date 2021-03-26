@@ -248,15 +248,15 @@ int execute(char*input){
                 ++temp_nex_tok;
                 while(isspace(*temp_nex_tok))
                 ++temp_nex_tok;
-                pd=fork();
-                if(pd==0)
+                int pd1=fork();
+                if(pd1==0)
                 {
                     close(0);
                     dup(p1[0]);
                     execute(nex_tok);
                 }
                 else
-                {   waitpid(pd,&Status,0);
+                {   
                     pd=fork();
                     if(pd==0)
                     {nex_tok=temp_nex_tok;
@@ -264,7 +264,9 @@ int execute(char*input){
                     dup(p2[0]);
                     execute(nex_tok);}
                     else
-                    waitpid(pd,&Status,0);
+                    {waitpid(pd,&Status,0);
+                    waitpid(pd1,&Status,0);
+                    }
                 }
                 
             }
@@ -274,6 +276,95 @@ int execute(char*input){
 
         case PIPE_TRIPLE:
             printf("TRIPLE\n");
+            pipe(pw);
+            // int p1[2];
+            // int p2[2];
+            int p3[2];
+            pd=fork();
+            if(pd==0)
+            {
+              close(1);
+              dup(pw[1]);
+              close(pw[0]);
+              execvp(arg_list[0], arg_list);
+                printf("error in executing %s\n",arg_list[0]);
+                exit(0);
+            }
+            else
+            {
+                waitpid(pd,&Status,0);
+                pipe(p1);
+                pipe(p2);
+                pipe(p3);
+                close(pw[1]);
+                char c;
+                while(read(pw[0],&c,1)>0)
+                {    //printf("%c",c);
+                    write(p1[1],&c,1);
+                    write(p2[1],&c,1);
+                    write(p3[1],&c,1);
+                }
+                close(pw[0]);
+                close(p1[1]);
+                close(p2[1]);
+                close(p3[1]);
+                char *temp_nex_tok=nex_tok;
+                while(*temp_nex_tok!=',')
+                ++temp_nex_tok;
+                *temp_nex_tok='\0';
+                ++temp_nex_tok;
+
+                char* nex_tok_c1;
+                while(isspace(*temp_nex_tok))
+                ++temp_nex_tok;
+
+                nex_tok_c1=temp_nex_tok;
+                while(*temp_nex_tok!=',')
+                ++temp_nex_tok;
+                *temp_nex_tok='\0';
+                ++temp_nex_tok;
+
+                 while(isspace(*temp_nex_tok))
+                ++temp_nex_tok;
+                char *nex_tok_c2=temp_nex_tok;
+
+                int pd1=fork();
+                if(pd1==0)
+                {
+                    close(0);
+                    dup(p1[0]);
+                    execute(nex_tok);
+                }
+                else
+                {
+                    int pd2=fork();
+
+                    if(pd2==0)
+                {
+                    close(0);
+                    dup(p2[0]);
+                    execute(nex_tok_c1);
+                }
+                else
+                {
+                    pd=fork();
+                    if(pd==0)
+                    {
+                     close(0);
+                    dup(p3[0]);
+                    execute(nex_tok_c2);   
+                    }
+                    else
+                    {
+                        waitpid(pd,&Status,0);
+                        waitpid(pd1,&Status,0);
+                        waitpid(pd2,&Status,0);
+                    }
+                }
+
+                }
+
+            }
             break;
 
         default: printf("ERROR. THIS REDIRECTION IS NOT SUPPORTED YET\n");
