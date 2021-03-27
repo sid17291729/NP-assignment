@@ -8,6 +8,7 @@
 #include<ctype.h>
 #include<sys/stat.h>
 #include<fcntl.h>
+#include<signal.h>
 
 #define ANSI_COLOR_GREEN "\x1b[32m"
 #define ANSI_COLOR_RESET   "\x1b[0m"
@@ -18,20 +19,30 @@ enum MODE{NONE, PIPE, REDIRECT_OUT, REDIRECT_IN, REDIRECT_APPEND, PIPE_DOUBLE,PI
 
 char read_buf[MAXLEN];
 char *arg_list[MAXARGLEN];
-
+char *cmd_list[MAXLEN];
 int execute(char*input);
 char*get_input();
 int isDelim(char c);
 char*set_mode(char*,int*);
 int has_pipe(char *nex_tok);
+int is_sc(char *cmd);
+void handle_sc(char *cmd);
+void sig_handle(int sig_no);
 int main()
-{
+{   signal(SIGINT,sig_handle);
     fprintf(stdout,"Shell Running\n");
     char*input;
     int Status;
     while(1)
     {
         input = get_input();
+        if(strcmp(input,"exit")==0)
+        exit(0);
+        if(is_sc(input))
+        {  
+            handle_sc(input);
+            continue;
+        }
         int p=fork();
         if(p==0)
         break;
@@ -40,6 +51,7 @@ int main()
         printf("process pid=%d, return status=%d\n",p,Status);}   
         printf("\n");
     }
+    //printf("input=%s\n",input);
     execute(input);
 }
 
@@ -77,7 +89,7 @@ int execute(char*input){
             
             pd=fork();
             if(pd==0){
-                //printf("executing %s\n",arg_list[0]);
+                
                 execvp(arg_list[0],arg_list);
                 exit(0);
             }
@@ -429,19 +441,119 @@ char* set_mode(char*nex_tok, int*mode){
     }
     return nex_tok;
 }
-
+int not_char(char c)
+{
+    if(!(c>='a'&&c<='z'||c>='A'&&c<='Z'))
+    return 1;
+    return 0;
+}
 char*get_input(){
     fputs(ANSI_COLOR_GREEN"MyShell$ "ANSI_COLOR_RESET,stdout);
     fflush(stdout);
     fgets(read_buf,MAXLEN,stdin);
+    
+    
     int ptr_end = strlen(read_buf)-1;
     int ptr_strt = 0;
     while(isspace(read_buf[ptr_end])) read_buf[ptr_end--]='\0';
-    while(isspace(read_buf[ptr_strt])) ptr_strt++;
+    while(isspace(read_buf[ptr_strt])||not_char(read_buf[ptr_strt])) ptr_strt++;
     return read_buf+ptr_strt;
 }
 
 int isDelim(char c){
     if(c=='|'||c=='<'||c=='>') return 1;
     return 0;
+}
+void add_command(char * cmd,int ind){
+ if(ind>=MAXLEN)
+ {printf("Index out of bounds. max index value=%d\n",MAXLEN-1);
+    return;
+ }
+ int l=strlen(cmd);
+ cmd_list[ind]=(char*)malloc(sizeof(char)*(l+1));
+ strcpy(cmd_list[ind],cmd);
+ return;
+}
+void delete_command(int ind)
+{
+ if(ind>=MAXLEN)
+ {printf("Index out of bounds. max index value=%d\n",MAXLEN-1);
+    return;
+ }
+ cmd_list[ind]=NULL;
+ return;   
+}
+int is_sc(char *cmd)
+{   char *temp=cmd;
+    if(temp[0]=='s'&&temp[1]=='c')
+    return 1;
+
+    return 0;
+}
+void handle_sc(char *cmd)
+{   char *temp=cmd; 
+    int n=strlen(cmd);
+    while(*temp&&*temp!='-')
+    ++temp;
+    ++temp;
+    int add=0;
+    if(*temp=='i')
+    add=1;
+    
+    temp+=2;
+    char* index_string;
+    index_string=temp;
+    
+    while(!isspace(*temp))
+    ++temp;
+    *temp='\0';
+    ++temp;
+    while(isspace(*temp))
+    ++temp;
+    int index=atoi(index_string);
+    
+    if(add)
+    add_command(temp,index);
+    else
+    delete_command(index);
+
+}
+void sig_handle(int sig_no)
+{   printf("\n");
+    fflush(stdout);
+    fflush(stdin);
+    int ind;
+    int Status;
+    int pd=fork();
+    if(pd==0)
+    {
+    while(1)
+    {    fgets(read_buf,MAXLEN,stdin);
+         fflush(stdin);
+         ind=atoi(read_buf);
+        if(ind==-1)
+        exit(0);
+        if(!cmd_list[ind])
+        {
+            printf("no command at the index\n");
+            fflush(stdout);
+        
+        }
+        else
+            break; 
+    }
+    
+    
+        execute(cmd_list[ind]);
+        exit(0);
+    }
+    else
+    {waitpid(pd,&Status,0);
+    fputs(ANSI_COLOR_GREEN"MyShell$ "ANSI_COLOR_RESET,stdout);
+    fflush(stdout);
+    
+    
+    fflush(stdin);
+    return;
+    }
 }
