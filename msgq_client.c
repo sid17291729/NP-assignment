@@ -19,6 +19,7 @@ struct payload {
     long    pid;
     long    client_id;
     long    gid;
+    time_t  msg_time;
 };
 
 typedef struct {
@@ -107,7 +108,7 @@ int main(){
 	        perror("msgrcv");
 	        exit(-1);
             }
-            printf("groups available till - %ld-1\n", msg.payload.gid);
+            printf("groups available till - %ld\n", msg.payload.gid-1);
             break;
             
         case 2:
@@ -156,6 +157,7 @@ int main(){
                 scanf("%s", msg.payload.buffer);
                 if(strcmp(msg.payload.buffer, ":over")==0)
                     break;
+                msg.payload.msg_time = time(NULL);
                 if(msgsnd(mid_server, (struct MESSAGE*)&msg, sizeof(msg.payload), 0)==-1){
                     perror("msgsnd");
     	            exit(-1);
@@ -174,6 +176,7 @@ int main(){
                 scanf("%s", msg.payload.buffer);
                 if(strcmp(msg.payload.buffer, ":over")==0)
                     break;
+                msg.payload.msg_time = time(NULL);
                 if(msgsnd(msg.payload.pid, (struct MESSAGE*)&msg, sizeof(msg.payload), 0)==-1){
                     perror("msgsnd");
     	            exit(-1);
@@ -189,7 +192,10 @@ int main(){
 	            perror("msgrcv");
 	            exit(-1);
                 }
-                if(strcmp(msg.payload.header,":group msg")==0){
+                if(time(NULL)-msg.payload.msg_time >=10){
+                    printf("message redacted\n");
+                }
+                else if(strcmp(msg.payload.header,":group msg")==0){
                     printf("group - %ld, name - %ld\n%s\n", msg.payload.gid, msg.payload.client_id, msg.payload.buffer);
                 }
                 else if(strcmp(msg.payload.header,":personal msg")==0){
@@ -202,5 +208,4 @@ int main(){
     fclose(groups);
     return (EXIT_SUCCESS);  
 }
-
 
