@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include <signal.h>
+#include <time.h>
 
 #define MAX 200
 #define SERVER 1L
@@ -19,6 +20,7 @@ struct payload {
     long    pid;
     long    client_id;
     long    gid;
+    time_t  msg_time;
 };
 
 typedef struct {
