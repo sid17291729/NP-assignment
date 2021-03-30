@@ -8,16 +8,17 @@
 #include<fcntl.h>
 #include<ctype.h>
 #include<sys/wait.h>
-//#include <netinet/in.h>
 #include<arpa/inet.h>
 #define MAXLEN 100
+#define MAXARGLEN 50
+#define MAX_MSG_LEN 1000
 #define ANSI_COLOR_GREEN "\x1b[32m"
 #define ANSI_COLOR_RESET   "\x1b[0m"
 
 char *node_ip[MAXLEN];
 char read_buf[MAXLEN];
 int socket_fd[MAXLEN];
-char read_buf[MAXLEN];
+
 int active_conections[MAXLEN];
 struct sockaddr_in node_address[MAXLEN];
 void parse_ip(FILE* fp);
@@ -26,6 +27,8 @@ int is_local(char *input);
 void execute_local(char *input);
 void connect_nodes();
 void execute_node(char * input);
+char * has_pipe(int len,char *cmd);
+int cd_exec(char *input);
 int main(int argc, char *argv[])
 {
     
@@ -49,11 +52,14 @@ int main(int argc, char *argv[])
         input=get_input();
         
         if(is_local(input))
-        {
+        {   if(cd_exec(input))
+            {   printf("cd executed\n");
+                continue;
+            }
             int p=fork();
             if(p==0)
              break;
-             else
+            else
              waitpid(p,&Status,0);
         }
         else
@@ -76,23 +82,79 @@ int main(int argc, char *argv[])
 }
 
 void execute_node(char * input)
-{
-  int i=0;
+{ 
+    int i=0;
+    int wait_node=0;
+    if(has_pipe(strlen(input),input))
+    {
+        int l=strlen(input);
+        
+        for(int j=l-1;j>=0;--j)
+        {
+            if(input[j]=='|'&&input[j+1]=='n'&&input[j+2]>='0'&&input[j+2]<='9')
+            {
+                int k1=j+2;
+                int k=k1;
+                while(input[k]&&input[k]!='.')
+                ++k;
+
+                input[k]='\0';
+                wait_node=atoi(input+k1);
+                input[k]='.';
+                break;
+            }
+        }
+    }
     while(input[i]&&input[i]!='.')
     ++i;
+    if(input[i-1]=='*')
+    {   char cmd[MAXARGLEN];
+        strcpy(cmd,input+i+1);
+        for(int j=0;j<MAXLEN;++j)
+        {
+            if(active_conections[j])
+            {
+                int message_len=strlen(cmd);
+                write(socket_fd[j],cmd,message_len);
+                int r=read(socket_fd[j],read_buf,MAXLEN);
+                read_buf[r]='\0';   
+                printf("result from node %d =%s\n",j,read_buf);
+            }
+        }
+        return ;
+    }
     input[i]='\0';
     int node= atoi(input+1);
+    if(wait_node==0)
+        wait_node=node;
     if(active_conections[node]==0)
     {
         printf("connection to %d not active,restart to connect\n",node);
         exit(0);
     }
     ++i;
+    
     int message_len=strlen(input+i);
+    //printf("waitnode=%d,node=%d\n",wait_node,node);
+    
     write(socket_fd[node],input+i,message_len);
-    read(socket_fd[node],read_buf,MAXLEN);
-    printf("read_buf=%s\n",read_buf);
+    
+    // write(socket_fd[node],"0",1);
+    // printf("data sent\n");
+    int r=read(socket_fd[wait_node],read_buf,MAXLEN);
+    read_buf[r]='\0';   
+    printf("result=%s\n",read_buf);
+  
+  
 
+}
+char * has_pipe(int len,char *cmd)
+{
+  for(int i=0;i<len;++i)
+    {if(cmd[i]=='|'&&cmd[i+1]=='n'&&cmd[i+2]>='0'&&cmd[i+2]<='9')
+      return cmd+i;
+    }
+  return NULL;
 }
 void connect_nodes()
 {
@@ -107,33 +169,52 @@ void connect_nodes()
      node_address[i].sin_port=htons(1024+i);
      s=connect(socket_fd[i],(struct sockaddr *)&node_address[i],sizeof(node_address[i]));
     if(s==0)
-    active_conections[i]=1;
+    {
+        active_conections[i]=1;
+        printf("connected for node %d\n",i);   
+    }
     else
-    active_conections[i]=0;
+        active_conections[i]=0;
   }
   
 
 }
+int cd_exec(char *input)
+{ int ret=0;
+  if(input[0]=='c'&&input[1]=='d')
+  { ret=1;
+      int i=2;
+      while(input[i]==' ')
+      ++i;
+      chdir(input+i);
+  }
+  
+  return ret;
+}
 void execute_local(char *input)
-{
+{   
+
     int Status;
     pid_t pd;
     
-    int arg_ptr=0;
+    int arg_ptr=2;
     char *nex_tok=input;
     char *arg_list[MAXLEN];
+    arg_list[0]="sh";
+    arg_list[1]="-c";
     //fix parsing
-    while(*nex_tok){
-        arg_list[arg_ptr++]=nex_tok;
-        while(*nex_tok && !isspace(*nex_tok)){
-            nex_tok++;
-        }
-        while(isspace(*nex_tok)){
-            *nex_tok = '\0';
-            nex_tok++;
-        }
+    // while(*nex_tok){
+    //     arg_list[arg_ptr++]=nex_tok;
+    //     while(*nex_tok && !isspace(*nex_tok)){
+    //         nex_tok++;
+    //     }
+    //     while(isspace(*nex_tok)){
+    //         *nex_tok = '\0';
+    //         nex_tok++;
+    //     }
         
-    }
+    // }
+    arg_list[arg_ptr++]=input;
     arg_list[arg_ptr]=NULL;
     execvp(arg_list[0],arg_list);
     printf("error execvp\n");
@@ -144,6 +225,8 @@ int is_local(char *input)
     if(input[0]=='n')
     {
         int i=1;
+        if(input[1]=='*')
+            return 0;
         while(input[i]>='0'&&input[i]<='9')
         ++i;
 
@@ -194,7 +277,7 @@ void parse_ip(FILE *fp)
 
 char*get_input()
 {
-    fputs(ANSI_COLOR_GREEN"MyShell$ "ANSI_COLOR_RESET,stdout);
+    fputs(ANSI_COLOR_GREEN"Cluster_Shell$ "ANSI_COLOR_RESET,stdout);
     fflush(stdout);
     fgets(read_buf,MAXLEN,stdin);
     
