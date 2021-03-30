@@ -28,14 +28,17 @@ int has_pipe(char *nex_tok);
 int is_sc(char *cmd);
 void handle_sc(char *cmd);
 void sig_handle(int sig_no);
+int is_bgprocess();
 int main()
 {   signal(SIGINT,sig_handle);
     fprintf(stdout,"Shell Running\n");
     char*input;
-    int Status;
+    int Status=0;
+    int is_bgp=0;
     while(1)
     {
         input = get_input();
+        is_bgp=is_bgprocess(input);
         if(strcmp(input,"exit")==0)
         exit(0);
         if(is_sc(input))
@@ -44,12 +47,20 @@ int main()
             continue;
         }
         int p=fork();
-        if(p==0)
-        break;
-        else
-        {waitpid(p,&Status,0);
-        printf("process pid=%d, return status=%d\n",p,Status);}   
-        printf("\n");
+        if(p==0){
+            setpgid(0,0);
+            break;
+        };
+        
+        if(!is_bgp){ 
+            waitpid(p,&Status,0);
+            tcsetpgrp(STDIN_FILENO,getpgid(0));
+            printf("process pid=%d, return status=%d\n",p,Status);       
+        }
+        else{
+            tcsetpgrp(STDIN_FILENO,getpgid(0));
+        }
+        
     }
     //printf("input=%s\n",input);
     execute(input);
@@ -131,6 +142,7 @@ int execute(char*input){
                 nex_tok++;
             }
             filename_fd = open(nex_tok, O_CREAT|O_TRUNC|O_WRONLY);
+            if(filename_fd<0){ perror("FILE OPENING"); return -1; }
             pd = fork();
             if(pd==0){
                 close(1);
@@ -151,6 +163,7 @@ int execute(char*input){
                 nex_tok++;
             }
             filename_fd = open(nex_tok, O_CREAT|O_APPEND|O_WRONLY);
+            if(filename_fd<0){ perror("FILE OPENING"); return -1; }
             pd = fork();
             if(pd==0){
                 close(1);
@@ -451,7 +464,7 @@ char*get_input(){
     fputs(ANSI_COLOR_GREEN"MyShell$ "ANSI_COLOR_RESET,stdout);
     fflush(stdout);
     fgets(read_buf,MAXLEN,stdin);
-    
+    read_buf[MAXLEN-1] = '\0';
     
     int ptr_end = strlen(read_buf)-1;
     int ptr_strt = 0;
@@ -556,4 +569,19 @@ void sig_handle(int sig_no)
     fflush(stdin);
     return;
     }
+}
+
+int is_bgprocess(char *input){
+    int len = strlen(input);
+    len--;
+    if(input[len]=='&'){
+        input[len] = '\0';
+        len--;
+        while(isspace(input[len])){
+            input[len]='\0';
+        }
+        return 1;
+    }
+    return 0;
+
 }
