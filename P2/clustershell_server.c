@@ -9,6 +9,7 @@
 #include<ctype.h>
 #include<sys/wait.h>
 #include<arpa/inet.h>
+#include<errno.h>
 #define MAXLEN 100
 #define MAXARGLEN 50
 #define MAX_MSG_LEN 1000
@@ -17,6 +18,7 @@ char ACK[10];
 char *arg_list[MAXARGLEN];
 char *node_ip[MAXLEN];
 int socket_fd[MAXLEN];
+int active_connections[MAXLEN];
 struct sockaddr_in node_address[MAXLEN];
 int MAIN_FD;
 
@@ -44,45 +46,46 @@ int main(int argc,char *argv[])
   
   int cli_fd;
   
-  printf("Server Running\nwaiting for connection\n");
+  printf("Server Running \n\n");
   socklen_t clen=sizeof(cli_addr);
   int reciever_pid;
-  while(1){
-  cli_fd=accept(listen_fd,(struct sockaddr *)&cli_addr,&clen);
+  MAIN_FD=0;
+  while(1)//creator process
+  {
+    printf("creator process waiting for connection\n");
+    memset((char*)&cli_addr,0,clen);
+    cli_fd=accept(listen_fd,(struct sockaddr *)&cli_addr,&clen);
+    printf("connected\n");
     if(!MAIN_FD)
-    {MAIN_FD=cli_fd;
-     main_addr=cli_addr;
-     printf("connected to the main node\n");
+    {
+      MAIN_FD=cli_fd;
+      main_addr=cli_addr;
+      printf("connected to the main node\n");
     }
+    printf("\n");
     reciever_pid=fork();
     
     if(reciever_pid==0)
       break;
+    else
+    { if(MAIN_FD!=cli_fd)
+        close(cli_fd);
+    }
   }
   
   if(MAIN_FD==cli_fd)
   {  
-    while(1)
-    { 
-      int r=read(cli_fd,read_buf,MAX_MSG_LEN);
+    while(1)//principal process
+    { printf("principal process waiting for commands from the main node\n");
+      int r=read(MAIN_FD,read_buf,MAX_MSG_LEN);
       read_buf[r]='\0';
       printf("recieved command=%s from main node\n",read_buf);
       if(strcmp(read_buf,"exit")==0)
        { close(MAIN_FD);
          exit(0);
         }
-      // char dest_string[10];      
-      // int dest=read(cli_fd,dest_string,7);
-      // dest_string[dest]='\0';
-      // dest=atoi(dest_string);
-      // int fd_set;
-      // if(dest!=0)
-      // {  
-      //   fd_set=socket_fd[dest];
-      // }
-      // int p[2];
-      // pipe(p); 
-      int fd_set=cli_fd;
+      
+      int fd_set=MAIN_FD;
       char *pipe_pos=NULL;
       pipe_pos=has_pipe(strlen(read_buf),read_buf);
       char *cmd_send=NULL;
@@ -96,17 +99,23 @@ int main(int argc,char *argv[])
         reciever_node=atoi(pipe_pos+2);
         fd_set=socket_fd[reciever_node];
         cmd_send=pipe_pos+i+1;
-        //printf("fd_set=%d\n",fd_set);
+        
         *pipe_pos='\0';
         int execute_pid=fork();
         if(execute_pid==0)
-        {
-          int s;
-          s=connect(socket_fd[reciever_node],(struct sockaddr *)&node_address[reciever_node],sizeof(node_address[reciever_node]));
+        {  printf("connecting with node %d\n",reciever_node);
+           printf("...\n");
+          int s=socket(PF_INET,SOCK_STREAM,IPPROTO_TCP);
+          fd_set=s;
+          s=connect(s,(struct sockaddr *)&node_address[reciever_node],sizeof(node_address[reciever_node]));
           if(s!=0)
           {
            printf("unable to connect to node %d\n",reciever_node);
+           printf("errnor no.=%d\n",errno);
+           printf("Error description is : %s\n",strerror(errno));
+           exit(0);
           }
+          printf("connected with node %d\n",reciever_node);
           r=read(fd_set,ACK,2);
           ACK[r]='\0';
           write(fd_set,cmd_send,strlen(cmd_send));
@@ -115,7 +124,7 @@ int main(int argc,char *argv[])
           printf("executing %s\n",read_buf);
           close(1);
           dup(fd_set);
-          //close(p[0]);
+          
           get_arguments(read_buf);
         
           execvp(arg_list[0],arg_list);
@@ -124,11 +133,11 @@ int main(int argc,char *argv[])
           exit(0);
         }
         else
-        { //close(p[1]);
-          close(fd_set);
+        { 
+          
           waitpid(execute_pid,&Status,0);
           
-          printf("command %s executed\n",arg_list[0]);
+          printf("command executed and connection\n\n");
           
         }
         continue;
@@ -136,17 +145,18 @@ int main(int argc,char *argv[])
       }
       
       if(cd_exec(read_buf))
-       {
+       { printf("executing cd command\n\n");
          write(MAIN_FD,"directory changed",18);
          continue;
        }
 
       int execute_pid=fork();
       if(execute_pid==0)
-      {
+      { printf("executing %s\n",read_buf);
         close(1);
         dup(MAIN_FD);
         get_arguments(read_buf);
+        
         execvp(arg_list[0],arg_list);
         printf("error in execvp\n");
         write(MAIN_FD,"Error_in execvp",50);
@@ -154,23 +164,29 @@ int main(int argc,char *argv[])
       else
       {
         waitpid(execute_pid,&Status,0);
+        printf("Command executed\n\n");
       }
       
     }
     
   }
-  else
-  { 
+  else//side process
+  { printf("side process connected\n");
     ACK[0]='1';
     ACK[1]='\0';
     char cmd[MAXARGLEN];
     write(cli_fd,ACK,1);
     int cmd_len=read(cli_fd,cmd,MAXARGLEN);
     cmd[cmd_len]='\0';
+    printf("Command recieved=%s\n",cmd);
     
-   // printf("ACKsent\n");
+    
+   
     write(cli_fd,ACK,1);
     int msg_len=read(cli_fd,read_buf,MAX_MSG_LEN);
+    read_buf[msg_len]='\0';
+    printf("data recieved\n");
+    
     int p[2];
     pipe(p);
     write(p[1],read_buf,msg_len);
@@ -194,13 +210,22 @@ int main(int argc,char *argv[])
 
       int execute_pid=fork();
       if(execute_pid==0)
-      {
-        int s;
-        s=connect(socket_fd[reciever_node],(struct sockaddr *)&node_address[reciever_node],sizeof(node_address[reciever_node]));
+      { close(cli_fd);
+        printf("connecting with node %d\n\n",reciever_node);
+        printf("...\n");
+        int s=socket(PF_INET,SOCK_STREAM,IPPROTO_TCP);
+        fd_set=s;
+        s=connect(s,(struct sockaddr *)&node_address[reciever_node],sizeof(node_address[reciever_node]));
         if(s!=0)
         {
          printf("unable to connect to node %d\n",reciever_node);
+           printf("errnor no.=%d\n",errno);
+           printf("Error description is : %s\n",strerror(errno));
+           exit(0);
+         
         }
+        else
+        printf("connected with node %d\n",reciever_node);
         int r=read(fd_set,ACK,2);
         ACK[r]='\0';
         write(fd_set,cmd_send,strlen(cmd_send));
@@ -209,7 +234,7 @@ int main(int argc,char *argv[])
         printf("executing %s\n",read_buf);
         close(1);
         dup(fd_set);
-         //close(p[0]);
+         
         get_arguments(read_buf);
         
         execvp(arg_list[0],arg_list);
@@ -219,17 +244,17 @@ int main(int argc,char *argv[])
 
       }
       else
-        { //close(p[1]);
-          close(fd_set);
+        {
           waitpid(execute_pid,&Status,0);
           
-          printf("executed command\n");
+          printf("command executed, data sent and connection closed\n\n");
           
         }
+        close(cli_fd);
         exit(0);
     }
 
-    //write(cli_fd,ACK,1);
+    
     int execute_pd=fork();
     if(execute_pd==0)
     {  printf("executing command %s\n",cmd);
@@ -248,9 +273,10 @@ int main(int argc,char *argv[])
     close(p[1]);
     close(p[0]);
     waitpid(execute_pd,&Status,0);
-    printf("executed\n");
+    printf("command executed and data sent\n");
+    close(cli_fd);
     exit(0);
-    //int cmd_len=read()
+    
   } 
 }
 int cd_exec(char *input)
@@ -278,20 +304,7 @@ void get_arguments(char *input)
   int ptr=2;
   arg_list[0]="sh";
   arg_list[1]="-c";
-  // while(*input)
-  // { 
-  //   while(*input&&isspace(*input))
-  //   ++input;
-  //   arg_list[ptr++]=input;
-  //   while(*input&&!isspace(*input))
-  //   {
-  //     ++input;
-  //   }
-  //   if(!(*input))
-  //   break;
-  //   *input='\0';
-  //   ++input;
-  // }
+  
   arg_list[ptr++]=input;
   arg_list[ptr]=NULL;
 }
@@ -320,11 +333,10 @@ void parse_ip(FILE *fp)
       int index=atoi(read_buf);
       node_ip[index]=(char *)malloc(sizeof(char)*(l+1));
       strcpy(node_ip[index],read_buf+i);
-      int s=socket(PF_INET,SOCK_STREAM,IPPROTO_TCP);
-      socket_fd[index]=s;
+      
       node_address[index].sin_family=AF_INET;
       inet_pton(AF_INET,node_ip[index],&node_address[index].sin_addr);
       node_address[index].sin_port=htons(1024+i);
     }
-    // print_node_ip_list();
+    
 }

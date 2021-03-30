@@ -16,7 +16,7 @@
 #define ANSI_COLOR_RESET   "\x1b[0m"
 
 char *node_ip[MAXLEN];
-char read_buf[MAXLEN];
+char read_buf[MAX_MSG_LEN];
 int socket_fd[MAXLEN];
 
 int active_conections[MAXLEN];
@@ -48,7 +48,8 @@ int main(int argc, char *argv[])
     int Status;
     
     while(1)
-    {    
+    {   for(int i=0;i<MAX_MSG_LEN;++i)
+        read_buf[i]='\0';
         input=get_input();
         
         if(is_local(input))
@@ -135,12 +136,11 @@ void execute_node(char * input)
     ++i;
     
     int message_len=strlen(input+i);
-    //printf("waitnode=%d,node=%d\n",wait_node,node);
+    
     
     write(socket_fd[node],input+i,message_len);
     
-    // write(socket_fd[node],"0",1);
-    // printf("data sent\n");
+    
     int r=read(socket_fd[wait_node],read_buf,MAXLEN);
     read_buf[r]='\0';   
     printf("result=%s\n",read_buf);
@@ -202,18 +202,7 @@ void execute_local(char *input)
     char *arg_list[MAXLEN];
     arg_list[0]="sh";
     arg_list[1]="-c";
-    //fix parsing
-    // while(*nex_tok){
-    //     arg_list[arg_ptr++]=nex_tok;
-    //     while(*nex_tok && !isspace(*nex_tok)){
-    //         nex_tok++;
-    //     }
-    //     while(isspace(*nex_tok)){
-    //         *nex_tok = '\0';
-    //         nex_tok++;
-    //     }
-        
-    // }
+    
     arg_list[arg_ptr++]=input;
     arg_list[arg_ptr]=NULL;
     execvp(arg_list[0],arg_list);
